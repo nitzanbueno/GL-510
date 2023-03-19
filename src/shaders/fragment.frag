@@ -1,257 +1,541 @@
-#version 130
-uniform int m;
+#version 410 core
+
+uniform int mm;
 out vec4 o;
-float PI = 3.1416;
-float t = m/float(44100);
-float rep = 2.0;
-float dist = 18.0;
-float scene = 0;
-float brg = 1.48;
-float ap1 = 23.0;
-float ap2 = 35.0;
-float hash(float c){return fract(sin(dot(c, 12.9898)) * 43758.5453);}
-mat3 rx(float a){return mat3(1.0,0.0,0.0,0.0,cos(a),-sin(a),0.0,sin(a),cos(a));}
-mat3 ry(float a){return mat3(cos(a),0.0,sin(a),0.0,1.0,0.0,-sin(a),0.0,cos(a));}
-mat3 rz(float a){return mat3(cos(a),-sin(a),0.0,sin(a),cos(a),0.0,0.0,0.0,1.0);}
-float box(vec3 p, vec3 b)
+float _t = (mm - 400)/44100. * 140. / 60.; // in beats instead of seconds
+vec2 _res = vec2(1680,1050);
+
+#define sat(x) clamp(x, 0., 1.)
+
+const float MAX_DIST = 500.;
+const float SURF_DIST = .001;
+const vec3 FOG_COLOR = vec3(145, 155, 166) / 255.;
+const vec3 SUN_COLOR = vec3(239,233,160) / 255.;
+const vec3 FOG = vec3(145, 155, 166) / 255.;
+const mat2 m = mat2( 1.6,  1.2, -1.2,  1.6 );
+const float PI = 3.141592;
+
+vec2 hash( vec2 p ) {
+	p = vec2(dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3)));
+	return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+}
+
+float noise( in vec2 p ) {
+    const float K1 = 0.366025404; // (sqrt(3)-1)/2;
+    const float K2 = 0.211324865; // (3-sqrt(3))/6;
+	vec2 i = floor(p + (p.x+p.y)*K1),
+        a = p - i + (i.x+i.y)*K2,
+        o = (a.x>a.y) ? vec2(1.0,0.0) : vec2(0.0,1.0), //vec2 of = 0.5 + 0.5*vec2(sign(a.x-a.y), sign(a.y-a.x));
+        b = a - o + K2,
+	    c = a - 1.0 + 2.0*K2;
+    vec3 h = max(0.5-vec3(dot(a,a), dot(b,b), dot(c,c) ), 0.0 ),
+	     n = h*h*h*h*vec3( dot(a,hash(i+0.0)), dot(b,hash(i+o)), dot(c,hash(i+1.0)));
+    return dot(n, vec3(70.0));	
+}
+
+float fbm(vec2 n, int octaves) {
+	float total = 0.0, amplitude = 0.1;
+	for (int i = 0; i < octaves; i++) {
+        total += noise(n) * amplitude;
+		n = m * n;
+		amplitude *= 0.4;
+	}
+	return total;
+}
+
+float fbm(vec2 n) {return fbm(n, 1);}
+
+mat2 rot(float a) {
+    float s=sin(a), c=cos(a);
+    return mat2(c, -s, s, c);
+}
+
+float sdBox(vec3 p, vec3 s) {
+    p = abs(p)-s;
+	return length(max(p, 0.))+min(max(p.x, max(p.y, p.z)), 0.);
+}
+
+float sdHollowCircle(vec2 p, float r, float t) {
+    return abs(length(p) - r) - t;
+}
+
+float sdCappedCylinder( vec3 p, float h, float r ) {
+    vec2 d = abs(vec2(length(p.xz),p.y)) - vec2(r,h);
+    return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
+float sdTriPrism( vec3 p, vec2 h ) {
+    vec3 q = abs(p);
+    return max(q.z-h.y,max(q.x*0.866025+p.y*0.5,-p.y)-h.x*0.5);
+}
+
+float opSmoothUnion( float d1, float d2, float k ) {
+    float h = sat(0.5 + 0.5*(d2-d1)/k);
+    return mix( d2, d1, h ) - k*h*(1.0-h);
+}
+
+float tlBaseOutsideOld(vec3 p, float rounding, float thickness) {
+    p.z = abs(p.z);
+    float d = sdBox(vec3(p.xy, 0.), vec3(0.5, 1, 0.)) - rounding; // Rounded infinite box
+    d = max(p.z - thickness, d); // Chop off the front and back
+    
+    return d;
+}
+
+float tlBaseOutside(vec3 p, float rounding, float thickness) {
+    vec3 q = p;
+    q.z = -p.z - 0.2;
+    
+    float d = sdTriPrism(q.xzy, vec2(.7, 1.25));
+    d = max(d, -0.3 - p.z);
+    
+    float r = 30.;
+    //d = d + sin(p.x*r)*sin(p.y*r)*sin(p.z*r) * .001; // Displacement
+    
+    return d;
+}
+
+float tlBaseInside(vec3 p) {
+    // Box
+    float d = sdBox(p, vec3(0.5, 1.1, 0.05));
+    
+    // Displacement
+    float r = 30.;
+    p.xy += 0.1;
+    
+    return d + sin(p.x*r)*sin(p.y*r)*sin(p.z*r) * .0001;
+}
+
+float tlLight(vec3 p) {
+    // Repeat once towards each direction
+    float c = 0.7;
+    float l = 1.;
+    p.y = p.y-c*clamp(round(p.y/c),-l,l);
+    
+    return sdCappedCylinder((p - vec3(0.,0.,0.2)).xzy, 0.1, 0.3);
+}
+
+float _tlCap(vec3 p) {
+    return max(max(sdHollowCircle(p.xy, .34, 0.02), abs(p.z-.4) - .4), -p.y);
+}
+
+float tlCaps(vec3 p) {
+    vec3 capOffset = vec3(0,0.7,0);
+    
+    // make 3 caps (finite repetition made glitches which I can't be fucked to solve)
+    return max(min(min(_tlCap(p), _tlCap(p - capOffset)), _tlCap(p + capOffset)), length(p.xz - vec2(0., 0.2)) - 0.6);
+}
+
+float tlPole(vec3 p) {
+    p.y += 2.;
+    return sdCappedCylinder(p, 1., 0.1);
+}
+
+float floorHeight(vec2 p) {
+    // Moves to a local maximum nearby
+    vec2 v = vec2(.123, .114);
+    
+    // the -0.007 is there because for some inexplicable reason, the function returns ~0.007 for (0,0).
+    // it shouldn't, and when I set v to be some uniform (with the EXACT same value) it doesn't happen.
+    // I can't explain it.
+    return fbm(p / 30. + v) - fbm(v) - 0.007;
+}
+
+float tlFloor(vec3 p) {
+    return p.y + 3. + floorHeight(p.xz) * 60.;
+}
+
+vec2 scene(vec3 p) {
+     float baseOut = tlBaseOutside(p, 0.3, 0.2),
+          baseIn = tlBaseInside(p-vec3(0,0,0.2)),
+          pole = tlPole(p),
+          light = tlLight(p),
+          hole = light - 0.02, // Carve a slightly larger hole from the base
+          wholeTL = opSmoothUnion(pole, baseOut, 0.1), // The part of the traffic light that's lighter grey
+          caps = tlCaps(p),
+          floor_ = tlFloor(p);
+
+    baseIn = max(-hole, baseIn);
+    
+    float d = min(min(wholeTL, min(baseIn, min(light, caps))), floor_);
+    
+    float mat = 0.;
+    
+    if (d == wholeTL) {
+        mat = 1.;
+    } else if (d == baseIn) {
+        mat = 2.;
+    } else if (d == light) {
+        mat = 3.;
+    } else if (d == caps) {
+        mat = 4.;
+    } else if (d == floor_) {
+        mat = 5.;
+    }
+    
+    // *.7 to get rid of shading artifacts
+    return vec2(d * .7, mat);
+}
+
+vec2 rayMarch(vec3 ro, vec3 rd) {
+	vec2 dO = vec2(0.);
+    
+    for(int i=0; i<100; i++) {
+    	vec3 p = ro + rd*dO.x;
+        vec2 dS = scene(p);
+        dO.x += dS.x;
+        dO.y = dS.y;
+        if(dO.x>MAX_DIST || abs(dS.x)<SURF_DIST) break;
+    }
+    
+    return dO;
+}
+
+vec3 getNormal(vec3 p) {
+    vec2 e = vec2(.001, 0);
+    vec3 n = scene(p).x - 
+        vec3(scene(p-e.xyy).x, scene(p-e.yxy).x,scene(p-e.yyx).x);
+    
+    return normalize(n);
+}
+
+vec3 getRayDir(vec2 uv, vec3 p, vec3 l, float z) {
+    vec3 
+        f = normalize(l-p),
+        r = normalize(cross(vec3(0,1,0), f)),
+        u = cross(f,r),
+        c = f*z,
+        i = c + uv.x*r + uv.y*u;
+    return normalize(i);
+}
+
+vec3 getTLCenter(vec3 p) {
+    return vec3(0, round((p.y - 0.1) / 0.7) * 0.7, 0.3);
+}
+
+int getTLIndexByPoint(vec3 p) {
+    return 1 - int(round(p.y / 0.7));
+}
+
+vec3 tlColors[] = vec3[](vec3(1, 0, 0), vec3(1, 1, 0), vec3(0, 1, 0));
+vec3 getTLColorByIndex(int i) {
+    return tlColors[i];
+}
+
+vec3 getTLColor(vec3 p) {
+    int i = getTLIndexByPoint(p);
+    return getTLColorByIndex(i);
+}
+
+vec3 getTLCenterByIndex(int i) {
+    return vec3(0, 0.7 * float(1 - i), 0.3);
+}
+
+vec3 renderLightMetalMesh(vec3 p) {
+    // Renders the "metal mesh" effect often seen in real traffic lights.
+    vec3 col = getTLColor(p);
+    
+    // We want the effect only on the front
+    if (p.z < 0.3 - SURF_DIST) return vec3(0);
+    
+    // We're going for an effect of a hexagonal grid
+    float r = 0.02;
+    
+    vec2 grid = vec2(r, r * sqrt(3.) / 2.) * 1.14;
+    vec2 id = floor(p.xy / grid / 2.);
+    p.x -= grid.x * mod(id.y, 2.);
+    
+    p.xy = mod(p.xy, grid*2.) - grid;
+    
+    return col * smoothstep(r, r*.95, length(p.xy));
+    
+}
+
+float isGloballyLit(vec3 p, vec3 n, vec3 lightDir, float k) {
+    float res = 1.0;
+    
+    p += n * SURF_DIST * 2.;
+    
+    for( float t=0.; t<MAX_DIST; )
+    {
+        float h = scene(p + lightDir*t).x;
+        if( h<SURF_DIST )
+            return 0.0;
+            
+        res = min( res, k*h/t );
+        t += h;
+    }
+    
+    return res;
+}
+
+float isLocallyLit(vec3 p, vec3 n, vec3 light, float lightRadius, float k) {
+    // TODO IF I GIVE A SHIT: change the "light radius" parameter to check the material instead
+    // and then have 3 materials for the 3 lights
+    // (only if I give a shit)
+    
+    p += n * SURF_DIST * 2.;
+    
+    vec3 dir = normalize(light - p);
+
+    float res = 1.0;
+    
+    for( float t=SURF_DIST*2.; t<MAX_DIST; )
+    {
+        vec3 po = p + dir*t;
+        vec2 rm = scene(po);
+        float h = rm.x;
+        
+        bool isInLight = length(light - po) < lightRadius;
+        
+        if( h<SURF_DIST ) {
+            return isInLight ? res : 0.;
+        }
+        
+        // EXTREME cheating here. 
+        // I only do this part over here and not above because of the light material issue:
+        // Raymarching from the green cap to the red light should hit the cap,
+        // but it sometimes hits the yellow light itself, which causes the alg to think it
+        // hit the red light (there's only one light material).
+        // The proper fix is to make 3 light materials - I don't care enough.
+        if (rm.y != 3.) res = min( res, k*h/t );
+        t += h;
+    }
+    
+    // the surface shouldn't go off to infinity - if it does it actually missed the light
+    return 0.;
+}
+
+vec3 rgb(int r,int g,int b){return vec3(r,g,b) / 255.;}
+
+vec3 clouds(vec2 uv) {
+    float time = _t * (step(62., _t) * step(_t, 80.) * .8 + .1);
+    
+    vec3 sky = mix(rgb(100,120,141), rgb(204,202,198), sat(uv.y*.1+.2)) * .7;
+    
+    float cloud1 = sat(fbm(uv+time) * 3.5 + .2);
+    float cloud2 = sat(fbm(uv + time * vec2(1.,-1.)) * 3.5 + .2);
+    float cloudmix = cloud1 * cloud2 + .12;
+    cloudmix = pow(sat(cloudmix * 3.), 2.);
+    
+    
+    /*float cloudmix = 0.;
+    
+    float w = 0.7;
+    for (int i=0; i<8; i++){
+		cloudmix += w*noise( uv );
+        uv = m*uv + time;
+		w *= 0.6;
+    }*/
+    
+    
+    
+    return mix(sky, vec3(1.), cloudmix);
+}
+
+vec3 sky(vec3 rd, vec3 lightDir) {
+    float floorY = -5.;
+    
+    vec2 ti = (rd / clamp(rd.y, 0.001, 1.)).xz; // top intersection
+    
+    vec3 ceilCol = clouds(ti);//sat(vec3(topIntersect.x, 0., topIntersect.y));
+    
+    vec3 col = mix(ceilCol, FOG, smoothstep(4., 30., length(ti)));
+
+    return mix(col, SUN_COLOR, smoothstep(0.99, 1., sat(dot(rd, lightDir))));
+}
+
+
+vec3 floorTex(vec3 p) {
+    vec3 cols[] = vec3[](
+        rgb(239,228,227),
+        rgb(189,166,160),
+        rgb(164,135,111),
+        rgb(84,49,16),
+        rgb(143,114,81),
+        rgb(114,91,64)
+        );
+
+    vec2 uv = p.xz / 30.;
+    
+    vec3 col = mix(cols[2], cols[0], sat(noise(uv / 50.) * 8.));
+
+    float amp = 1.;
+
+    for(int i = 3; i < 6; i++) {
+        col = mix(col, cols[i], sat(noise(uv) * amp));
+        //amp *= .8;
+        uv = m * uv;
+    }
+    
+   /* vec3 scol = clouds(uv);
+    scol = vec3(dot(scol, vec3(1./3.)));
+    
+    col *= (scol * .4 + .6);*/
+
+    col = mix(vec3(.1), col, sat(floorHeight(uv) * 3. + .5));
+    
+    return col;
+}
+
+vec4 render(vec3 p, vec3 rd, vec3 n, vec3 r, float d, float mat, vec3 lightDir) {
+    vec3 matColors[] = vec3[](vec3(0.), vec3(.03), vec3(.01), vec3(0.), vec3(.03));
+    vec3 suncolor = rgb(239,233,160);
+
+    int pr = int(clamp(_t - 222, 0., 2.));
+    bool isTLLit[] = bool[](pr<2, pr==1 || pr == 3, pr==2);
+    
+    vec3 col = sky(rd, lightDir);
+    float rf = 0.; // reflection
+
+    if(d > MAX_DIST) return vec4(col, rf);
+  
+
+    float dif = sat(dot(n, lightDir)*.5+.5);
+    float fres = pow(1. - sat(dot(r, normalize(n))), 4.);
+    float spec = pow(sat(dot(lightDir, r)), 100.);
+    float l = isGloballyLit(p,n,lightDir, 10.);
+
+    if (mat <= 4.) {
+        // Shading!
+        col = vec3(dif) * matColors[int(mat)] * mix(0.3, 1., l)
+            + vec3(spec) * .3 * l * suncolor; // blacken
+
+        // Reflection (except on light and caps)
+        if (mat != 3. && mat != 4.)
+            rf = .3 * fres;
+    } else if (mat == 5.) {
+        col = floorTex(p) * pow(dif, 3.) * mix(0.3,1.,l);
+    }
+
+    if (mat == 3.) {
+        // Compute the traffic light index by Y
+        int idx = getTLIndexByPoint(p);
+        
+        if (isTLLit[idx]) // "Radiant" material
+            col = renderLightMetalMesh(p);
+    }
+
+    if (mat == 4.) {
+        // Compute light from traffic lights
+        for (int i = 0; i < 3; i++) {
+            if (!isTLLit[i]) continue;
+            vec3 light = getTLCenterByIndex(i);
+            lightDir = normalize(light - p);
+
+            dif = sat(dot(n, lightDir));
+            spec = pow(sat(dot(lightDir, normalize(r))), 2.);
+
+            vec3 tlCol = getTLColorByIndex(i);
+
+            col += tlCol * spec * .5 * isLocallyLit(p,n,light, 0.33, 3.);
+        }
+    }
+    
+    // Fog (needs improvement)
+    col = mix(col, FOG, smoothstep(0., MAX_DIST, d));
+    
+    return vec4(col, rf);
+}
+
+vec3 scene_trafficLight(in vec2 uv, vec2 m, vec3 look, vec3 sunDir) {
+    vec3 ro = vec3(0, 4, -4);
+    ro.yz *= rot(-m.y*3.141592+1.);
+    ro.xz *= rot(-m.x*6.283185);
+    ro += look;
+    
+    vec3 rd = getRayDir(uv, ro, look, .8);
+    
+    vec2 rm = rayMarch(ro, rd);
+    float d = rm.x;
+    
+    vec3 p = ro + rd * d;
+
+    vec3 n = getNormal(p);
+    vec3 r = normalize(reflect(rd, n));
+    
+    vec3 col = vec3(0);
+    
+    vec4 renderResult = render(p, rd, n, r, d, rm.y, sunDir);
+    col = renderResult.rgb;
+    
+    float rf = renderResult.a;
+    if (rf > 0.) {
+        // Reflect
+        rd = r;
+        ro = p + n * SURF_DIST * 2.;
+
+        rm = rayMarch(ro, rd);
+
+        p = ro + rd * rm.x;
+        n = getNormal(p);
+        r = normalize(reflect(rd, n));
+        
+        vec4 renderResult2 = render(p, rd, n, r, rm.x, rm.y, sunDir);
+        col += renderResult2.rgb * rf;
+    }
+    
+    return col;
+}
+
+float nsin(float a) {
+    return (1. - cos(a * PI)) / 2.;
+}
+
+vec3 scene_opening(in vec2 uv) {
+    float st = mod(_t / 2., 16.);
+    st = min(st, st / 2. + 4.);
+    
+    float fade = nsin(st / 2.);
+
+    vec2 v = uv - 0.3;
+    
+    float star = pow((sin(atan(v.y,v.x)*6.) + 1.) / 2., 4.);
+    float circle = 1. - smoothstep(0., 0.2, length(v));
+    float factor = mix(star*circle, circle,circle);
+    
+    return vec3(1,0,0) * pow(factor, (68. - _t) / 4.) * fade;
+}
+
+vec3 animate_trafficLight(vec2 uv) {
+    float e = step(_t, 176.), // 1 while not in end
+          s = step(80., _t);  // 1 while after start
+
+    vec2 m = vec2(.5, .5);
+
+    vec3 look = vec3(1000. * e,0,0);//, 0., _t * -30.); //sin(_t),0.,cos(_t)) * 40.;
+
+    vec3 sun = vec3(0,0,-1);
+    sun.yz *= rot(smoothstep(64., 80., _t) * 3. - .2);
+    sun.xz *= rot(.3);
+
+    float id = _t - mod(_t, 8.);
+    vec2 dir = hash(vec2(id));
+
+    look.xz -= mix(smoothstep(0, 32, 191. - _t) * vec2(0, -16), (8. + id - _t) * dir, e) * 30. * s;
+    m += dir * s * e * vec2(.5, .2);
+    m += step(192., _t) * smoothstep(160., 222., _t) * 30. * vec2(.1,0) * (step(208., _t)*2.-1.);
+
+    return scene_trafficLight(uv, m, look, sun);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
 {
-	return max(max(abs(p.x)-b.x,abs(p.y)-b.y),abs(p.z)-b.z);
+    vec2 uv = (fragCoord.xy-.5*_res.xy)/_res.y;
+
+    bool isOpening = _t < 62. || (_t < 63. && (uv.x < 0.));
+	
+    vec3 col = isOpening ? scene_opening(uv) : animate_trafficLight(uv);
+
+    col = pow(col, vec3(40. - 39. * smoothstep(0., 10., _t)));
+    
+    col *= 1. - smoothstep(241., 244., _t);
+
+    col = pow(col, vec3(.4545));	// gamma correction
+    
+    fragColor = vec4(col, 1.0);
 }
-float modp(inout vec2 p, float rep) {
-	float angle = 2*PI/rep;
-	float a = atan(p.y, p.x) + angle/2;
-	float c = floor(a/angle);
-	a = mod(a,angle) - angle/2.;
-	p = vec2(cos(a), sin(a))*length(p);
-	if (abs(c) >= (rep/2)) c = abs(c);
-	return c;
-}
-vec2 mod2(inout vec2 p, vec2 size) {
-	vec2 c = floor((p + size*0.5)/size);
-	p = mod(p + size*0.5,size) - size*0.5;
-	return c;
-}
-float sp(vec3 p, float r)
-{
-	return length(p)-r;
-}
-float caps(vec3 p, float r, float c){
-	return mix(length(p.xz) - r, length(vec3(p.x, abs(p.y) - c, p.z)) - r, step(c, abs(p.y)));
-}
-float map(vec3 p)
-{
-	if( scene < 1 ){
-		float d = (p.y);
-		vec2 r = mod2(p.zx, vec2(dist));
-		modp(p.zx, rep);
-		d = min(d, box((p-vec3(0,1,9)), vec3(9,9,0.2)) );
-		d = min(d, box((p-vec3(-6,1,0)), vec3(0.2,9.,9)) );
-		d = min(d, box((p-vec3(6,1,-9)), vec3(0.2,9.,9)) );
-		d = max(d, -box((p-vec3(0,4,0)), vec3(1.5,4.,10)));
-		return d;
-	}
-	else
-	{
-		p += vec3(-70,0,0);
-		vec3 q = p;
-		modp(p.xz, 4.0);
-		vec3 o = p;
-		mod2(o.yx, vec2(6,9));
-		vec3 r = p;
-		float d = caps(p-vec3(rep,-3,0), 44.0, dist);
-		mod2(r.xz, vec2(12.7));
-		float d2 = box((o-vec3(0.,1,0)), vec3(9,1.5,ap1));
-		d2 = max(d2, p.y-28.0);
-		d = max(d, -d2);
-		d = min(d, box((r-vec3(0.,8,0)), vec3(.6,9,.6)));
-		d = max(d, -caps(p-vec3(rep,-3,0), 24.0, 15.0));
-		float d6 = sp(p-vec3(rep,40,0), 30.0 );
-		d = max(d, -d6);
-		float d3 = caps(q-vec3(0,-3,0), 55.0, 0.0);
-		d3 = max(d3, -caps(q-vec3(0,-3,0), ap2, 15.0));
-		d3 = max(d3, -sp(q-vec3(0,40,0), 30.0 ));
-		d = max(d, d3);
-		return min(d, p.y);
-	}
-}
-vec3 rhs(vec3 dir, float i)
-{
-	vec2 rnd = vec2(hash(i+1.), hash(i+2.));
-	float s = rnd.x*PI*2.;
-	float t = rnd.y*2.-1.;
-	vec3 v = vec3(sin(s), cos(s), t) / sqrt(1.0 + t * t);
-	return v * sign(dot(v, dir));
-}
-float ao( vec3 p, vec3 n, float maxDist, float falloff)
-{
-	float ao = 0.0;
-	for( int i=0; i<10; i++ )
-	{
-		float l = hash(float(i))*maxDist;
-		vec3 rd = normalize(n+rhs(n, l )*0.95)*l;
-		ao += (l - map( p + rd )) / pow(1.+l, falloff);
-	}
-	return clamp(1.-ao*0.1,0.0,999.0);
-}
-vec3 shade( vec3 p, vec3 n, vec3 org, vec3 dir, vec2 v )
-{
-	return vec3(0.8)*sqrt(mix(ao(p,n, 8., 0.97), ao(p,n, 2., 0.9), 0.4));
-}
-vec3 normal( vec3 p )
-{
-	vec3 eps = vec3(0.001, 0.0, 0.0);
-	return normalize( vec3(
-		map(p+eps.xyy)-map(p-eps.xyy),
-		map(p+eps.yxy)-map(p-eps.yxy),
-		map(p+eps.yyx)-map(p-eps.yyx)
-	));
-}
-vec3 mr( vec3 ro, vec3 rd, vec2 nfplane, out float f)
-{
-	vec3 p = ro+rd*nfplane.x;
-	float t = 0.;
-	for(int i=0; i<40; i++)
-	{
-		float d = map(p);
-		t += d;
-		p += rd*d;
-		if( d < 0.01 || t > nfplane.y )
-			break;
-	}
-	f = 0.04*sqrt(nfplane.y/max(9.0, distance(ro, p)));
-	return p;
-}
-vec3 rm( vec3 ro, vec3 rd, vec2 nfplane )
-{
-	vec3 p = ro+rd*nfplane.x;
-	float t = 0.;
-	for(int i=0; i<80; i++)
-	{
-		float d = map(p);
-		t += d;
-		p += rd*d;
-		if( d < 0.01 || t > nfplane.y )
-			break;   
-	}
-	return p;
-}
-vec3 cc(vec3 c)
-{
-	return 0.08+0.94*pow(-0.5+1.7*pow(c,vec3(1.6)), vec3(0.6));
-}
-void main()
-{
-	vec2 res = vec2(1280,720);
-	vec2 q = gl_FragCoord.xy/res.xy;
-	vec2 v = -1.0+2.0*q;
-	v.x *= res.x/res.y;
-	vec3 ro = vec3(0);
-	vec3 rd = vec3(0);
-	if(t < 4){
-		o = vec4(0.035*hash(length(q)*t));
-		return;
-	} else if(t < 9.0) {
-		ro = vec3( 90.0+t,90.0,-130.0+t );
-		rd = normalize( vec3(v.x, v.y, 8.0))*rx(1.)*ry(.5);
-		rep = 6.0;
-		dist = 13.9;
-	} else if(t < 16){
-		ro = vec3( 90.0,90.0,-130.0+t );
-		rd = normalize( vec3(v.x, v.y, 8.0))*rx(1.)*ry(.5);
-		rep = 8.0;
-		dist = 16.0;
-	} else if(t < 26){
-		ro = vec3( 90.0+t,90.0,-130.0+t*0.1 );
-		rd = normalize( vec3(v.x, v.y, 8.0))*rx(1.)*ry(.5);
-	}
-	else if(t < 32){
-		ro = vec3( 90.0+t,90.0,-130.0 );
-		rd = normalize( vec3(v.x, v.y, 5.0))*rx(PI/2.);
-	}
-	else if(t < 35){
-		ro = vec3( 90.0+t,90.0,-130.0+t );
-		rd = normalize( vec3(v.x, v.y, 8.0))*rx(1.)*ry(.5);
-		rep = 6.0;
-		dist = 11.9;
-	}
-	else if(t < 44){
-		ro = vec3( 90.0-t*0.1,90.0,-130.0+t );
-		rd = normalize( vec3(v.x, v.y, 8.0))*rx(1.)*ry(.5);
-		rep = 6.0;
-		brg = 2.48-smoothstep(33,41,t);
-	}
-	else if(t < 49.5){
-		ro = vec3( 90.0+t*.5,40.0,-130.0+t*2 );
-		rd = normalize( vec3(v.x, v.y, 4.0))*rx(.5)*ry(-.2);
-		rep = 6.0;
-		dist = 21.0;
-		brg = 1.6;
-	}
-	else if(t < 58){
-		ro = vec3( 90.0+t,90.0,-130.0+t*0.1 );
-		rd = normalize( vec3(v.x, v.y, 8.0))*rx(1.)*ry(.5);
-		rep = 8.0;
-	}
-	else if(t < 69){
-		ro = vec3(t*.5,90.0,-t*.5 );
-		rd = normalize( vec3(v.x, v.y, 5.0))*rx(PI/2.)*ry(t*.01);
-		rep = 6.0;
-		dist = 16.0 - 3.0*smoothstep(21,30,t*.4);
-	}
-	else if(t < 75){
-		float tt = t-69;
-		ro = vec3( 0,290+tt*2,-tt*3);
-		rd = normalize( vec3(v.x, v.y, 8.0) )*ry(1.2)*rx(1.5-0.01*tt)*rz(-1);
-		rep = 0.0;
-		dist = -26+43*smoothstep(70,82,t);
-		scene = 1;
-		brg = 1.4;
-	}
-	else if(t < 81){
-		float tt = t-75;
-		ro = vec3( 90.0-tt*3,210-tt,160-tt);
-		rd = normalize( vec3(v.x, v.y, 5.0) )*ry(3.1-(t-73)*0.01)*rx(-.9);
-		rep = 0.0;
-		dist = -26+43*smoothstep(70,82,t);
-		scene = 1;
-	}
-	else if(t < 98){
-		float tt = t-80;
-		ro = vec3( t,290-t,240-t);
-		rd = normalize( vec3(v.x, v.y, 5.0) )*ry(3.1+tt*0.003)*rx(-.9);
-		rep = 60.0;
-		dist = 17.0;
-		ap2 = 58-19*smoothstep(75,95,t)-12*smoothstep(85,96,t);
-		ap1 = 9+19*smoothstep(80,95,t);
-		scene = 1;
-	}
-	else if(t < 105){
-		ro = vec3( 90.0+t,90.0,-130.0+t );
-		rd = normalize( vec3(v.x, v.y, 8.0))*rx(1.)*ry(.5);
-		rep = 6.0;
-		dist = 11.9;
-	}
-	else if(t < 190){
-		ro = vec3( 90.0+t,90.0,-130.0+t*0.1 );
-		rd = normalize( vec3(v.x, v.y, 8.0))*rx(1.)*ry(.5);
-		brg = 1.48+1.5*smoothstep(111,140,t);
-	}
-	vec3 p = rm(ro, rd, vec2(1., 545.) );
-	vec3 n = normal(p.xyz);
-	vec3 col = shade(p, n, ro, rd, q);
-	vec3 rp = vec3(0);
-	float tile = 1.0;//ceil(sin(p.x*0.9)*cos(p.z*0.05));
-	if(p.y < 26.0){
-		// uhh, stuff...
-		//normalize(n+(1.0-tile)*0.1*vec3(hash(dot(p,p)),hash(length(p)),hash(dot(p,-p)) ))
-		float f;
-		rp = mr(p, reflect(rd, n), vec2(0.1, 300.), f );
-		vec3 rn = normal(rp.xyz);
-		col += shade(rp, rn, ro, rd, q)*f; 
-		col *= 0.8;
-	} else {
-		col = mix(col,0.5+0.5*vec3(col*dot(n, normalize(p-vec3(99,-99,0)))), 0.3);
-	}
-	col = pow(col*brg/sqrt(2.+dot(v*0.3,v*0.3)), vec3(1./2.2));
-	o = vec4(cc(col-0.035*hash(length(q)*t)), p.y<0.1?tile*distance(p, rp)/10.0:0.0 );
+
+void main() {
+    mainImage(gl_FragColor, gl_FragCoord.xy);
 }
