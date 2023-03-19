@@ -233,20 +233,10 @@ vec3 renderLightMetalMesh(vec3 p) {
     // Renders the "metal mesh" effect often seen in real traffic lights.
     vec3 col = getTLColor(p);
     
-    // We want the effect only on the front
-    if (p.z < 0.3 - SURF_DIST) return vec3(0);
+    vec2 uv = p.xy * 200.;
     
-    // We're going for an effect of a hexagonal grid
-    float r = 0.02;
-    
-    vec2 grid = vec2(r, r * sqrt(3.) / 2.) * 1.14;
-    vec2 id = floor(p.xy / grid / 2.);
-    p.x -= grid.x * mod(id.y, 2.);
-    
-    p.xy = mod(p.xy, grid*2.) - grid;
-    
-    return col * smoothstep(r, r*.95, length(p.xy));
-    
+    // The effect is a bunch of rows, each having tiny bumps throughout, modeled after real traffic lights I've seen
+    return col * (sin(uv.x) * .1 + .9) * (sin(uv.y) * .5 + .5);
 }
 
 float isGloballyLit(vec3 p, vec3 n, vec3 lightDir, float k) {
