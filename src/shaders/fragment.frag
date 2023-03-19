@@ -182,7 +182,7 @@ vec3 gRayMarch(vec3 ro, vec3 rd, float k) {
 }
 
 vec2 rayMarch(vec3 ro, vec3 rd) {
-	return gRayMarch(ro,rd,0).xy;
+	return gRayMarch(ro,rd,0.).xy;
 }
 
 float isGloballyLit(vec3 p, vec3 n, vec3 lightDir, float k) {
@@ -320,7 +320,7 @@ vec4 render(vec3 p, vec3 rd, vec3 n, vec3 r, float d, float mat, vec3 lightDir) 
     vec3 suncolor = rgb(239,233,160);
 
     float tlTime = floor(_t);
-    bool isTLLit[] = bool[](tlTime < 224, tlTime == 223, tlTime >= 224);
+    bool isTLLit[] = bool[](tlTime < 224., tlTime == 223., tlTime >= 224.);
     
     vec3 col = sky(rd, lightDir);
     float rf = 0.; // reflection
@@ -450,8 +450,8 @@ vec3 animate_trafficLight(vec2 uv) {
     sun.yz *= rot(smoothstep(64., 80., _t) * 3. - .2);
     sun.xz *= rot(.3);
 
-    look.xz -= mix(smoothstep(0, 32, 191. - _t) * vec2(0, -16), (8. - mo) * dir, e) * 30. * s;
-    m += mix(smoothstep(0.,8.,mo)-.5, 1, step(_t, 128.)) * dir * s * e * vec2(.5, .2);
+    look.xz -= mix(smoothstep(0., 32., 191. - _t) * vec2(0, -16), (8. - mo) * dir, e) * 30. * s;
+    m += mix(smoothstep(0.,8.,mo)-.5, 1., step(_t, 128.)) * dir * s * e * vec2(.5, .2);
     m += p * f * 30. * vec2(.1,0) * (step(208., _t)*2.-1.);
     look.y += f * (1.-p) * 4.;
 
