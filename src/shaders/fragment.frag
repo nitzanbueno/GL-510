@@ -33,17 +33,15 @@ float noise( in vec2 p ) {
     return dot(n, vec3(70.0));	
 }
 
-float fbm(vec2 n, int octaves) {
+float fbm(vec2 n) {
 	float total = 0.0, amplitude = 0.1;
-	for (int i = 0; i < octaves; i++) {
+	for (int i = 0; i < 1; i++) {
         total += noise(n) * amplitude;
 		n = m * n;
 		amplitude *= 0.4;
 	}
 	return total;
 }
-
-float fbm(vec2 n) {return fbm(n, 1);}
 
 mat2 rot(float a) {
     float s=sin(a), c=cos(a);
