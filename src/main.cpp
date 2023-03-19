@@ -11,7 +11,7 @@
 	#define BREAK_COMPATIBILITY 0
 #endif
 
-#define POST_PASS    1
+#define POST_PASS    0
 #define USE_MIPMAPS  1
 #define USE_AUDIO    1
 #define NO_UNIFORMS  0
@@ -48,7 +48,8 @@ int __cdecl main(int argc, char* argv[])
 	#if FULLSCREEN
 		ChangeDisplaySettings(&screenSettings, CDS_FULLSCREEN);
 		ShowCursor(0);
-		const HDC hDC = GetDC(CreateWindow((LPCSTR)0xC018, 0, WS_POPUP | WS_VISIBLE | WS_MAXIMIZE, 0, 0, 0, 0, 0, 0, 0, 0));
+		HWND window = CreateWindow((LPCSTR)0xC018, 0, WS_POPUP | WS_VISIBLE | WS_MAXIMIZE, 0, 0, 0, 0, 0, 0, 0, 0);
+		const HDC hDC = GetDC(window);
 	#else
 		#ifdef EDITOR_CONTROLS
 			HWND window = CreateWindow("static", 0, WS_POPUP | WS_VISIBLE, 0, 0, XRES, YRES, 0, 0, 0, 0);
@@ -57,7 +58,8 @@ int __cdecl main(int argc, char* argv[])
 			// you can create a pseudo fullscreen window by similarly enabling the WS_MAXIMIZE flag as above
 			// in which case you can replace the resolution parameters with 0s and save a couple bytes
 			// this only works if the resolution is set to the display device's native resolution
-			HDC hDC = GetDC(CreateWindow((LPCSTR)0xC018, 0, WS_POPUP | WS_VISIBLE, 0, 0, XRES, YRES, 0, 0, 0, 0));
+			HWND window = CreateWindow((LPCSTR)0xC018, 0, WS_POPUP | WS_VISIBLE, 0, 0, XRES, YRES, 0, 0, 0, 0);
+			HDC hDC = GetDC(window);
 		#endif
 	#endif
 
@@ -74,10 +76,19 @@ int __cdecl main(int argc, char* argv[])
 	// initialize sound
 	#ifndef EDITOR_CONTROLS
 		#if USE_AUDIO
-			CreateThread(0, 0, (LPTHREAD_START_ROUTINE)_4klang_render, lpSoundBuffer, 0, 0);
-			waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFMT, NULL, 0, CALLBACK_NULL);
-			waveOutPrepareHeader(hWaveOut, &WaveHDR, sizeof(WaveHDR));
-			waveOutWrite(hWaveOut, &WaveHDR, sizeof(WaveHDR));
+			LPDIRECTSOUND lpds;
+			LPDIRECTSOUNDBUFFER buf;
+			DirectSoundCreate(0, &lpds, 0);
+
+			lpds->SetCooperativeLevel(window, DSSCL_PRIORITY);
+			lpds->CreateSoundBuffer(&bufferDesc, &buf, NULL);
+
+			LPVOID p1;
+			DWORD l1;
+			
+			buf->Lock(0, 2 * MAX_SAMPLES * sizeof(SAMPLE_TYPE), &p1, &l1, NULL, NULL, NULL);
+			CreateThread(0, 0, (LPTHREAD_START_ROUTINE)_4klang_render, p1, 0, 0);
+			buf->Play(0, 0, 0);
 		#endif
 	#else
 		Leviathan::Editor editor = Leviathan::Editor();
@@ -110,7 +121,9 @@ int __cdecl main(int argc, char* argv[])
 		#ifndef EDITOR_CONTROLS
 			// if you don't have an audio system figure some other way to pass time to your shader
 			#if USE_AUDIO
-				waveOutGetPosition(hWaveOut, &MMTime, sizeof(MMTIME));
+				DWORD playCursor;
+				buf->GetCurrentPosition((DWORD*)&playCursor, NULL);
+				MMTime.u.sample = playCursor / 2 / sizeof(SAMPLE_TYPE);
 				// it is possible to upload your vars as vertex color attribute (gl_Color) to save one function import
 				#if NO_UNIFORMS
 					glColor3ui(MMTime.u.sample, 0, 0);
