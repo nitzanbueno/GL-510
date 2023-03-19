@@ -382,8 +382,8 @@ vec4 render(vec3 p, vec3 rd, vec3 n, vec3 r, float d, float mat, vec3 lightDir) 
     vec3 matColors[] = vec3[](vec3(0.), vec3(.03), vec3(.01), vec3(0.), vec3(.03));
     vec3 suncolor = rgb(239,233,160);
 
-    int pr = int(clamp(_t - 222, 0., 2.));
-    bool isTLLit[] = bool[](pr<2, pr==1 || pr == 3, pr==2);
+    float tlTime = floor(_t);
+    bool isTLLit[] = bool[](tlTime < 224, tlTime == 223, tlTime >= 224);
     
     vec3 col = sky(rd, lightDir);
     float rf = 0.; // reflection
