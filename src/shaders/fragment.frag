@@ -71,14 +71,6 @@ float opSmoothUnion( float d1, float d2, float k ) {
     return mix( d2, d1, h ) - k*h*(1.0-h);
 }
 
-float tlBaseOutsideOld(vec3 p, float rounding, float thickness) {
-    p.z = abs(p.z);
-    float d = sdBox(vec3(p.xy, 0.), vec3(0.5, 1, 0.)) - rounding; // Rounded infinite box
-    d = max(p.z - thickness, d); // Chop off the front and back
-    
-    return d;
-}
-
 float tlBaseOutside(vec3 p, float rounding, float thickness) {
     vec3 q = p;
     q.z = -p.z - 0.2;
