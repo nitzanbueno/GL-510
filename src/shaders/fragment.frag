@@ -166,18 +166,27 @@ vec2 scene(vec3 p) {
     return vec2(d * .7, mat);
 }
 
-vec2 rayMarch(vec3 ro, vec3 rd) {
-	vec2 dO = vec2(0.);
-    
+vec3 gRayMarch(vec3 ro, vec3 rd, float k) {
+    vec3 dO = vec3(0,0,1);
+
     for(int i=0; i<100; i++) {
     	vec3 p = ro + rd*dO.x;
         vec2 dS = scene(p);
+        dO.z = min( dO.z, k*dS.x/dO.x );
         dO.x += dS.x;
         dO.y = dS.y;
         if(dO.x>MAX_DIST || abs(dS.x)<SURF_DIST) break;
     }
-    
+
     return dO;
+}
+
+vec2 rayMarch(vec3 ro, vec3 rd) {
+	return gRayMarch(ro,rd,0).xy;
+}
+
+float isGloballyLit(vec3 p, vec3 n, vec3 lightDir, float k) {
+    return gRayMarch(p + n * SURF_DIST * 2., lightDir, k).z;
 }
 
 vec3 getNormal(vec3 p) {
@@ -228,24 +237,6 @@ vec3 renderLightMetalMesh(vec3 p) {
     
     // The effect is a bunch of rows, each having tiny bumps throughout, modeled after real traffic lights I've seen
     return col * (sin(uv.x) * .1 + .9) * (sin(uv.y) * .5 + .5);
-}
-
-float isGloballyLit(vec3 p, vec3 n, vec3 lightDir, float k) {
-    float res = 1.0;
-    
-    p += n * SURF_DIST * 2.;
-    
-    for( float t=0.; t<MAX_DIST; )
-    {
-        float h = scene(p + lightDir*t).x;
-        if( h<SURF_DIST )
-            return 0.0;
-            
-        res = min( res, k*h/t );
-        t += h;
-    }
-    
-    return res;
 }
 
 float isLocallyLit(vec3 p, vec3 n, vec3 light, float lightRadius, float k) {
