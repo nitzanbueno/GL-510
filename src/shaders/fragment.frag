@@ -2,16 +2,15 @@
 
 uniform int mm;
 out vec4 o;
-float _t = (mm - 400)/44100. * 140. / 60.; // in beats instead of seconds
-vec2 _res = vec2(1680,1050);
+float _t = (mm - 400)/18900.; // in beats instead of seconds (140 BPM, 44100 sample rate...)
+vec2 _res = vec2(640,480);
 
 #define sat(x) clamp(x, 0., 1.)
 
 const float MAX_DIST = 500.;
 const float SURF_DIST = .001;
-const vec3 FOG_COLOR = vec3(145, 155, 166) / 255.;
-const vec3 SUN_COLOR = vec3(239,233,160) / 255.;
-const vec3 FOG = vec3(145, 155, 166) / 255.;
+const vec3 FOG_COLOR = vec3(0.569, 0.608, 0.651);
+const vec3 SUN_COLOR = vec3(0.937, 0.914, 0.627);
 const mat2 m = mat2( 1.6,  1.2, -1.2,  1.6 );
 const float PI = 3.141592;
 
@@ -35,7 +34,7 @@ float noise( in vec2 p ) {
 
 float fbm(vec2 n) {
 	float total = 0.0, amplitude = 0.1;
-	for (int i = 0; i < 1; i++) {
+	for (int i = 0; i < 7; i++) {
         total += noise(n) * amplitude;
 		n = m * n;
 		amplitude *= 0.4;
@@ -328,7 +327,7 @@ vec3 sky(vec3 rd, vec3 lightDir) {
     
     vec3 ceilCol = clouds(ti);//sat(vec3(topIntersect.x, 0., topIntersect.y));
     
-    vec3 col = mix(ceilCol, FOG, smoothstep(4., 30., length(ti)));
+    vec3 col = mix(ceilCol, FOG_COLOR, smoothstep(4., 30., length(ti)));
 
     return mix(col, SUN_COLOR, smoothstep(0.99, 1., sat(dot(rd, lightDir))));
 }
@@ -421,7 +420,7 @@ vec4 render(vec3 p, vec3 rd, vec3 n, vec3 r, float d, float mat, vec3 lightDir) 
     }
     
     // Fog (needs improvement)
-    col = mix(col, FOG, smoothstep(0., MAX_DIST, d));
+    col = mix(col, FOG_COLOR, smoothstep(0., MAX_DIST, d));
     
     return vec4(col, rf);
 }
