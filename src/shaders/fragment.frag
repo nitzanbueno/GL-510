@@ -257,40 +257,7 @@ float isGloballyLit(vec3 p, vec3 n, vec3 lightDir, float k) {
 }
 
 float isLocallyLit(vec3 p, vec3 n, vec3 light, float lightRadius, float k) {
-    // TODO IF I GIVE A SHIT: change the "light radius" parameter to check the material instead
-    // and then have 3 materials for the 3 lights
-    // (only if I give a shit)
-    
-    p += n * SURF_DIST * 2.;
-    
-    vec3 dir = normalize(light - p);
-
-    float res = 1.0;
-    
-    for( float t=SURF_DIST*2.; t<MAX_DIST; )
-    {
-        vec3 po = p + dir*t;
-        vec2 rm = scene(po);
-        float h = rm.x;
-        
-        bool isInLight = length(light - po) < lightRadius;
-        
-        if( h<SURF_DIST ) {
-            return isInLight ? res : 0.;
-        }
-        
-        // EXTREME cheating here. 
-        // I only do this part over here and not above because of the light material issue:
-        // Raymarching from the green cap to the red light should hit the cap,
-        // but it sometimes hits the yellow light itself, which causes the alg to think it
-        // hit the red light (there's only one light material).
-        // The proper fix is to make 3 light materials - I don't care enough.
-        if (rm.y != 3.) res = min( res, k*h/t );
-        t += h;
-    }
-    
-    // the surface shouldn't go off to infinity - if it does it actually missed the light
-    return 0.;
+    return sat(dot(normalize(light - p), normalize(n))) * step(abs(p.y - light.y),lightRadius * 1.5);
 }
 
 vec3 rgb(int r,int g,int b){return vec3(r,g,b) / 255.;}
