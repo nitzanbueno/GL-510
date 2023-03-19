@@ -375,10 +375,10 @@ vec4 render(vec3 p, vec3 rd, vec3 n, vec3 r, float d, float mat, vec3 lightDir) 
     return vec4(col, rf);
 }
 
-vec3 scene_trafficLight(in vec2 uv, vec2 m, vec3 look, vec3 sunDir) {
+vec3 scene_trafficLight(in vec2 uv, vec2 rotation, vec3 look, vec3 sunDir) {
     vec3 ro = vec3(0, 4, -4);
-    ro.yz *= rot(-m.y*3.141592+1.);
-    ro.xz *= rot(-m.x*6.283185);
+    ro.yz *= rot(-rotation.y*3.141592+1.);
+    ro.xz *= rot(-rotation.x*6.283185);
     ro += look;
     
     vec3 rd = getRayDir(uv, ro, look, .8);
