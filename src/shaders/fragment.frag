@@ -487,22 +487,24 @@ vec3 scene_opening(in vec2 uv) {
 
 vec3 animate_trafficLight(vec2 uv) {
     float e = step(_t, 176.), // 1 while not in end
-          s = step(80., _t);  // 1 while after start
+          s = step(80., _t),  // 1 while after start
+          f = step(192., _t), // 1 in final shots
+          p = smoothstep(160., 222., _t),  // spline or smth
+          mo = mod(_t, 8.);
 
-    vec2 m = vec2(.5, .5);
+    vec2 m = vec2(.5, .5),
+         dir = hash(vec2(_t - mo));
 
-    vec3 look = vec3(1000. * e,0,0);//, 0., _t * -30.); //sin(_t),0.,cos(_t)) * 40.;
+    vec3 look = vec3(1000. * e,0,0), //, 0., _t * -30.); //sin(_t),0.,cos(_t)) * 40.;
+         sun = vec3(0,0,-1);
 
-    vec3 sun = vec3(0,0,-1);
     sun.yz *= rot(smoothstep(64., 80., _t) * 3. - .2);
     sun.xz *= rot(.3);
 
-    float id = _t - mod(_t, 8.);
-    vec2 dir = hash(vec2(id));
-
-    look.xz -= mix(smoothstep(0, 32, 191. - _t) * vec2(0, -16), (8. + id - _t) * dir, e) * 30. * s;
-    m += dir * s * e * vec2(.5, .2);
-    m += step(192., _t) * smoothstep(160., 222., _t) * 30. * vec2(.1,0) * (step(208., _t)*2.-1.);
+    look.xz -= mix(smoothstep(0, 32, 191. - _t) * vec2(0, -16), (8. - mo) * dir, e) * 30. * s;
+    m += mix(smoothstep(0.,8.,mo)-.5, 1, step(_t, 128.)) * dir * s * e * vec2(.5, .2);
+    m += p * f * 30. * vec2(.1,0) * (step(208., _t)*2.-1.);
+    look.y += f * (1.-p) * 4.;
 
     return scene_trafficLight(uv, m, look, sun);
 }
@@ -514,10 +516,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
     bool isOpening = _t < 62. || (_t < 63. && (uv.x < 0.));
 	
     vec3 col = isOpening ? scene_opening(uv) : animate_trafficLight(uv);
-
-    col = pow(col, vec3(40. - 39. * smoothstep(0., 10., _t)));
     
-    col *= 1. - smoothstep(241., 244., _t);
+    col *= 1. - smoothstep(230., 244., _t);
 
     col = pow(col, vec3(.4545));	// gamma correction
     
