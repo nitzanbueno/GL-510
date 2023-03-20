@@ -377,8 +377,8 @@ vec4 render(vec3 p, vec3 rd, vec3 n, vec3 r, float d, float mat, vec3 lightDir) 
 
 vec3 scene_trafficLight(in vec2 uv, vec2 rotation, vec3 look, vec3 sunDir) {
     vec3 ro = vec3(0, 4, -4);
-    ro.yz *= rot(-rotation.y*3.141592+1.);
-    ro.xz *= rot(-rotation.x*6.283185);
+    ro.yz *= rot(-rotation.y*PI+1.);
+    ro.xz *= rot(-rotation.x*PI*2.);
     ro += look;
     
     vec3 rd = getRayDir(uv, ro, look, .8);
@@ -425,7 +425,7 @@ vec3 scene_opening(in vec2 uv) {
     
     float fade = nsin(st / 2.);
 
-    vec2 v = uv - 0.3;
+    vec2 v = uv - .15 - hash(vec2(floor(st/4.)))/2.;
     
     float star = pow((sin(atan(v.y,v.x)*6.) + 1.) / 2., 4.);
     float circle = 1. - smoothstep(0., 0.2, length(v));
@@ -441,8 +441,8 @@ vec3 animate_trafficLight(vec2 uv) {
           p = smoothstep(160., 222., _t),  // spline or smth
           mo = mod(_t, 8.);
 
-    vec2 m = vec2(.5, .5),
-         dir = hash(vec2(_t - mo));
+    vec2 m = vec2(.5),
+         dir = hash(vec2(_t - mo + 3.));
 
     vec3 look = vec3(1000. * e,0,0), //, 0., _t * -30.); //sin(_t),0.,cos(_t)) * 40.;
          sun = vec3(0,0,-1);
@@ -452,7 +452,7 @@ vec3 animate_trafficLight(vec2 uv) {
 
     look.xz -= mix(smoothstep(0., 32., 191. - _t) * vec2(0, -16), (8. - mo) * dir, e) * 30. * s;
     m += mix(smoothstep(0.,8.,mo)-.5, 1., step(_t, 128.)) * dir * s * e * vec2(.5, .2);
-    m += p * f * 30. * vec2(.1,0) * (step(208., _t)*2.-1.);
+    m.x += p * f * 3. * (step(208., _t)*2.-1.);
     look.y += f * (1.-p) * 4.;
 
     return scene_trafficLight(uv, m, look, sun);
