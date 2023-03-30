@@ -11,8 +11,8 @@
 #include <GL/gl.h>
 
 // global resolution
-#define XRES 1680
-#define YRES 1050
+#define XRES 1920
+#define YRES 1080
 
 // declare this symbol if your code uses floating point types
 // extern "C" int _fltused;

@@ -1,9 +1,9 @@
 #version 410 core
 
 uniform int mm;
-out vec4 o;
+//out vec4 o;
 float _t = (mm - 400)/18900.; // in beats instead of seconds (140 BPM, 44100 sample rate...)
-vec2 _res = vec2(640,480);
+vec2 _res = vec2(1920, 1080);
 
 #define sat(x) clamp(x, 0., 1.)
 
@@ -458,9 +458,9 @@ vec3 animate_trafficLight(vec2 uv) {
     return scene_trafficLight(uv, m, look, sun);
 }
 
-void mainImage(out vec4 fragColor, in vec2 fragCoord)
+void main()
 {
-    vec2 uv = (fragCoord.xy-.5*_res.xy)/_res.y;
+    vec2 uv = (gl_FragCoord.xy-.5*_res.xy)/_res.y;
 
     bool isOpening = _t < 62. || (_t < 63. && (uv.x < 0.));
 	
@@ -470,9 +470,5 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
 
     col = pow(col, vec3(.4545));	// gamma correction
     
-    fragColor = vec4(col, 1.0);
-}
-
-void main() {
-    mainImage(gl_FragColor, gl_FragCoord.xy);
+    gl_FragColor = vec4(col, 1.0);
 }
