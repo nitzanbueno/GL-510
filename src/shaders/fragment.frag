@@ -466,7 +466,7 @@ void main()
 	
     vec3 col = isOpening ? scene_opening(uv) : animate_trafficLight(uv);
     
-    col *= 1. - smoothstep(230., 244., _t);
+    col *= 1. - smoothstep(230., 243.5, _t);
 
     col = pow(col, vec3(.4545));	// gamma correction
     

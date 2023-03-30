@@ -167,7 +167,7 @@ int __cdecl main(int argc, char* argv[])
 
 	} while(!GetAsyncKeyState(VK_ESCAPE)
 		#if USE_AUDIO
-			&& MMTime.u.sample < MAX_SAMPLES
+			&& MMTime.u.sample < (MAX_SAMPLES - 441*25)
 		#endif
 	);
 

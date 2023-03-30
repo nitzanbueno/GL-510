@@ -310,7 +310,7 @@ const char *fragment_frag =
    "vec3 f=s?"
      "A(v):"
      "I(v);"
-   "f*=1.-smoothstep(230.,244.,m);"
+   "f*=1.-smoothstep(230.,243.5,m);"
    "f=pow(f,vec3(.4545));"
    "gl_FragColor=vec4(f,1);"
  "}";
